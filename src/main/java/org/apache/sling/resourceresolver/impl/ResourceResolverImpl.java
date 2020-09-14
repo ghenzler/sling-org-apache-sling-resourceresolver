@@ -47,7 +47,7 @@ import org.apache.sling.api.resource.ResourceResolver;
 import org.apache.sling.api.resource.ResourceResolverFactory;
 import org.apache.sling.api.resource.ResourceUtil;
 import org.apache.sling.api.resource.ResourceWrapper;
-import org.apache.sling.api.resource.mapping.PathToUriMappingService;
+import org.apache.sling.api.resource.mapping.ExtendedResourceResolver;
 import org.apache.sling.api.resource.mapping.ResourceMapper;
 import org.apache.sling.resourceresolver.impl.helper.RedirectResource;
 import org.apache.sling.resourceresolver.impl.helper.ResourceIteratorDecorator;
@@ -62,12 +62,13 @@ import org.apache.sling.resourceresolver.impl.mapping.ResourceMapperImpl;
 import org.apache.sling.resourceresolver.impl.params.ParsedParameters;
 import org.apache.sling.resourceresolver.impl.providers.ResourceProviderStorageProvider;
 import org.apache.sling.spi.resource.provider.ResourceProvider;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Adaptable(adaptableClass = ResourceResolver.class, adapters = { @Adapter(Session.class), @Adapter(ResourceMapper.class) })
-public class ResourceResolverImpl extends SlingAdaptable implements ResourceResolver {
+public class ResourceResolverImpl extends SlingAdaptable implements ResourceResolver, ExtendedResourceResolver {
 
     /** Default logger */
     private static final Logger logger = LoggerFactory.getLogger(ResourceResolverImpl.class);
@@ -257,7 +258,27 @@ public class ResourceResolverImpl extends SlingAdaptable implements ResourceReso
         return rsrc;
     }
 
+    @Override
+    public @NotNull Resource resolveResource(@NotNull String absPath) {
+
+        // this is meant to be resolveInternalPart2() I assume (but signatures don't easily match)
+
+        return null;
+    }
+
     private Resource resolveInternal(final HttpServletRequest request, String absPath) {
+
+        Object resolveResult = resolveInternalPart1(request, absPath);
+        if (resolveResult instanceof Resource) {
+            return (Resource) resolveResult;
+        }
+        String[] realPathList = (String[]) resolveResult;
+
+        return resolveInternalPart2(absPath, realPathList);
+    }
+
+    private Object /* String[] or RedirectResource */ resolveInternalPart1(final HttpServletRequest request, String absPath) {
+
         // make sure abspath is not null and is absolute
         if (absPath == null) {
             absPath = "/";
@@ -335,7 +356,10 @@ public class ResourceResolverImpl extends SlingAdaptable implements ResourceReso
                 throw new ResourceNotFoundException(absPath);
             }
         }
+        return realPathList;
+    }
 
+    private Resource resolveInternalPart2(String absPath, String[] realPathList) {
         // now we have the real path resolved from virtual host mapping
         // this path may be absolute or relative, in which case we try
         // to resolve it against the search path
@@ -344,7 +368,6 @@ public class ResourceResolverImpl extends SlingAdaptable implements ResourceReso
         for (int i = 0; res == null && i < realPathList.length; i++) {
             final ParsedParameters parsedPath = new ParsedParameters(realPathList[i]);
             final String realPath = parsedPath.getRawPath();
-
 
             // first check whether the requested resource is a StarResource
             if (StarResource.appliesTo(realPath)) {
@@ -361,10 +384,10 @@ public class ResourceResolverImpl extends SlingAdaptable implements ResourceReso
 
                 } else {
 
-                    for(final String path : factory.getSearchPath()) {
+                    for (final String path : factory.getSearchPath()) {
                         logger.debug("resolve: Try relative mapped path with search path entry {}", path);
                         res = resolveInternal(path + realPath, parsedPath.getParameters());
-                        if ( res != null ) {
+                        if (res != null) {
                             break;
                         }
                     }
@@ -1115,4 +1138,5 @@ public class ResourceResolverImpl extends SlingAdaptable implements ResourceReso
         }
         return rsrc;
     }
+
 }
